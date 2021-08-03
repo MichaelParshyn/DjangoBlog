@@ -26,7 +26,6 @@ class PostReaction(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE)
     reaction = models.CharField(max_length=200, choices=constants.REACTIONS, default=constants.REACTION_NONE)
     time = models.DateTimeField(default=datetime.now())
-    pass
 
 class PostCreator(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE)
