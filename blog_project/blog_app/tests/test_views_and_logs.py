@@ -1,6 +1,7 @@
 from rest_framework.test import APIClient
 from . import base_test
-from blog_app.models import Log, Account
+from blog_app.models import Log, Account, PostCreator, Post, PostReaction
+from blog_app import constants
 import pdb
 
 class AccountLogTestCase(base_test.NewUserTestCase):
@@ -31,8 +32,8 @@ class AccountLogTestCase(base_test.NewUserTestCase):
         self.client.post('/api/user/account/', {'username': 'test_username', 'user': self.user.id}, format='json')
         self.login_response = self.client.post('/api/user/login/', {'username': self.username_sec,
                                                                     'password': self.password}, format='json')
-        #self.access_token = self.login_response.json()['access']
-        #self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.access_token}')
+        self.access_token = self.login_response.json()['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.access_token}')
         create_account = self.client.post('/api/user/account/', {'username': 'test_username',
                                                                  'user': self.user_sec.id}, format='json')
         self.assertEquals(create_account.status_code, 400)
@@ -141,6 +142,110 @@ class AccountLogTestCase(base_test.NewUserTestCase):
         self.assertEquals(result.json()['status'], 'fail')
         self.assertEquals(Account.objects.filter(id=acc.id, user=self.user).count(), 1)
         self.assertEquals(Log.objects.filter(user=self.user, method='DELETE', action=f'/api/user/account/{acc.id}').count(), 0)
+
+    def tearDown(self) -> None:
+        self.client.logout()
+        super().tearDown()
+
+
+class PostLogTestCase(base_test.NewUserTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.client = APIClient()
+        self.login_response = self.client.post('/api/user/login/', {'username': self.username,
+                                                                    'password': self.password}, format='json')
+        self.access_token = self.login_response.json()['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.access_token}')
+        self.client.post('/api/user/account/', {'username': 'test_username',
+                                                'user': self.user.id}, format='json')
+        self.acc = Account.objects.filter(user=self.user)[0]
+
+    def test_create_post_success(self):
+        """
+        Checking post creating, PostCreator creating, role in PostCreator. Checking logs.
+        Expected: post created successfully, PostCreator object created successfully, author has role "owner", log created.
+        """
+        result = self.client.post('/api/post/', {'title': 'Head', 'author': self.acc.id}, format='json')
+
+        self.assertEquals(result.status_code, 201)
+        self.assertEquals(result.json()['status'], 'success')
+        self.assertEquals(PostCreator.objects.filter(account=self.acc, role=constants.ROLE_OWNER).count(), 1)
+        self.assertEquals(Log.objects.filter(user=self.user, method='POST', action='/api/post/').count(), 1)
+
+    def test_create_post_empty_title(self):
+        """
+        Checking post creating, 'PostCreator' creating, role in PostCreator. Checking logs.
+        Expected: post not created, PostCreator object not created, log not created.
+        """
+        result = self.client.post('/api/post/', {'author': self.acc.id}, format='json')
+
+        self.assertEquals(result.status_code, 400)
+        self.assertEquals(result.json()['status'], 'fail')
+        self.assertEquals(PostCreator.objects.filter(account=self.acc, role=constants.ROLE_OWNER).count(), 0)
+        self.assertEquals(Log.objects.filter(user=self.user, method='POST', action='/api/post/').count(), 0)
+
+    def test_update_post_success(self):
+        """
+        Checking post updating with the correct data. Checking logs.
+        Expected: post updated, log not created.
+        """
+        self.client.post('/api/post/', {'title': 'Head', 'author': self.acc.id}, format='json')
+        post = Post.objects.filter(title='Head', author=self.acc.id)[0]
+        result = self.client.put(f'/api/post/{post.id}', {'title': 'Header', 'text': 'Some text', 'author': self.acc.id}, format='json')
+
+        self.assertEquals(result.status_code, 202)
+        self.assertEquals(result.json()['status'], 'success')
+        self.assertEquals(Post.objects.filter(title='Header', text='Some text', author= self.acc.id).count(), 1)
+        self.assertEquals(Log.objects.filter(user=self.user, method='PUT', action=f'/api/post/{post.id}').count(), 1)
+
+    def test_update_post_empty_title(self):
+        """
+        Checking post updating with empty title. Checking logs.
+        Expected: post not updated, log not created.
+        """
+        self.client.post('/api/post/', {'title': 'Head', 'author': self.acc.id}, format='json')
+        post = Post.objects.filter(title='Head', author=self.acc.id)[0]
+        result = self.client.put(f'/api/post/{post.id}',
+                                 {'title': '', 'text': 'Some text', 'author': self.acc.id}, format='json')
+
+        self.assertEquals(result.status_code, 400)
+        self.assertEquals(result.json()['status'], 'fail')
+        self.assertEquals(Post.objects.filter(title='', text='Some text', author= self.acc.id).count(), 0)
+        self.assertEquals(Log.objects.filter(user=self.user, method='PUT', action=f'/api/post/{post.id}').count(), 0)
+
+    def test_delete_post_by_staff(self):
+        """
+        Checking post deleting with correct data. Checking logs.
+        Expected: post deleted, log created, 'PostCreator' deleted.
+        """
+        self.client.post('/api/post/', {'title': 'Head', 'author': self.acc.id}, format='json')
+        post = Post.objects.filter(title='Head', author=self.acc.id)[0]
+        result = self.client.delete(f'/api/post/{post.id}', format='json')
+
+        self.assertEquals(result.status_code, 204)
+        self.assertEquals(Post.objects.filter(title='Head', author=self.acc.id).count(), 0)
+        self.assertEquals(PostCreator.objects.filter(post=post).count(), 0)
+        self.assertEquals(Log.objects.filter(user=self.user, method='DELETE', action=f'/api/post/{post.id}').count(), 1)
+
+    def test_delete_post_by_another(self):
+        """
+        Checking post deleting by non permitted user. Checking logs.
+        Expected: post not deleted, log not created.
+        """
+        author_id = self.acc.id
+        self.client.post('/api/post/', {'title': 'Head', 'author': author_id}, format='json')
+        post = Post.objects.filter(title='Head', author=self.acc.id)[0]
+
+        self.login_response = self.client.post('/api/user/login/', {'username': self.username_sec,
+                                                                    'password': self.password}, format='json')
+        self.access_token = self.login_response.json()['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.access_token}')
+        result = self.client.delete(f'/api/post/{post.id}', format='json')
+
+        self.assertEquals(result.status_code, 403)
+        self.assertEquals(Post.objects.filter(title='Head', author=author_id).count(), 1)
+        self.assertEquals(PostCreator.objects.filter(post=post).count(), 1)
+        self.assertEquals(Log.objects.filter(user=self.user, method='DELETE', action=f'/api/post/{post.id}').count(), 0)
 
     def tearDown(self) -> None:
         self.client.logout()

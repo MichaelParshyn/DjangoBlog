@@ -24,7 +24,7 @@ class UserLoginTestCase(base_test.NewUserTestCase):
         client = APIClient()
         self.user.is_superuser = True
         self.user.save()
-        request = client.post('/api/user/login/', {'username': self.username,
+        request = client.post('/api/user/login/', {'username': self.user.username,
                                                   'password': self.password}, format='json')
         access_token = request.json()['access']
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
@@ -34,7 +34,8 @@ class UserLoginTestCase(base_test.NewUserTestCase):
 
     def test_get_userlist_by_common(self):
         client = APIClient()
-        request = client.post('/api/user/login/', {'username': self.username2,
+
+        request = client.post('/api/user/login/', {'username': self.user_sec.username,
                                                    'password': self.password}, format='json')
         access_token = request.json()['access']
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')

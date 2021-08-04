@@ -31,8 +31,7 @@ class UserAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
         instance = self.get_object()
         if request.user.is_superuser or request.user == instance:
             self.perform_destroy(instance)
-            Log.objects.create(account=Account.objects.get(id=serializer.data['author'], method=request.method,
-                                                           action=request.path, time=datetime.now()))
+            Log.objects.create(user=request.user, method=request.method, action=request.path, time=datetime.now())
             return Response({'status': 'success',
                      'message': 'Deleted successfully!'}, status=status.HTTP_204_NO_CONTENT)
         else:

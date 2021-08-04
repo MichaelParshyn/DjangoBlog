@@ -18,6 +18,10 @@ class PostAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
         """
         Creating post. Can be created by authenticated user. Automatically gets onwnership.
         """
+        if 'title' not in request.data:
+            return Response({'status': 'fail',
+                             'message': 'Title could not be empty string!'}, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
@@ -26,8 +30,7 @@ class PostAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
         PostCreator.objects.create(post=Post.objects.get(id=serializer.data['id']),
                                    account=Account.objects.get(id=serializer.data['author']),
                                    role=constants.ROLE_OWNER)
-        Log.objects.create(account=Account.objects.get(id=serializer.data['author'], method=request.method,
-                                                       action=request.path, time=datetime.now()))
+        Log.objects.create(user=request.user, method=request.method, action=request.path, time=datetime.now())
         return Response({'status': 'success',
                          'message': 'Added successfully!'}, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -35,13 +38,16 @@ class PostAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
         """
         Updating post. Can be updated by authenticated user from staff account (owner, admin or editor role)
         """
-        if (Account.objects.filter(user = request.user)[0].user!=request.user):
+        if Account.objects.filter(user = request.user)[0].user!=request.user:
             return Response({'status': 'fail',
                              'message': 'You are triyng to use account which not belongs to you!'},
                             status=status.HTTP_403_FORBIDDEN)
         else:
             instance = self.get_object()
-            if (PostCreator.objects.filter(post=instance)[0].account.user!=request.user):
+            if 'title' not in request.data or not request.data['title']:
+                return Response({'status': 'fail',
+                                 'message': 'Title could not be empty string!'}, status=status.HTTP_400_BAD_REQUEST)
+            if PostCreator.objects.filter(post=instance)[0].account.user!=request.user:
                 return Response({'status': 'fail',
                                  'message': 'You are not permitted to edit this post!'},
                                 status=status.HTTP_403_FORBIDDEN)
@@ -55,39 +61,33 @@ class PostAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
                     # If 'prefetch_related' has been applied to a queryset, we need to
                     # forcibly invalidate the prefetch cache on the instance.
                     instance._prefetched_objects_cache = {}
-
-                Log.objects.create(account=Account.objects.get(id=serializer.data['author'], method=request.method,
-                                                               action=request.path, time=datetime.now()))
+                Log.objects.create(user=request.user, method=request.method, action=request.path, time=datetime.now())
                 return Response({'status': 'success',
-                         'message': 'Updated successfully!',
-                         'data': serializer.data}, status=status.HTTP_202_ACCEPTED)
+                         'message': 'Updated successfully!'}, status=status.HTTP_202_ACCEPTED)
 
     def destroy(self, request, *args, **kwargs):
         """
         Deleting post. Can be deleted by owner or admin
         """
-        if (Account.objects.filter(user=request.user)!=1):
+        if Account.objects.filter(user=request.user).count()!=1:
             return Response({'status': 'fail',
                              'message': 'You are triyng to use account which not belongs to you!'},
                             status=status.HTTP_403_FORBIDDEN)
         else:
-            if (PostCreator.objects.filter(post=Post.objects.filter(id=request.path.split('/')[-1]),
-                                           account=request.data['account'],
-                                           role=constants.ROLE_EDITOR) != 1):
+            if PostCreator.objects.filter(post=Post.objects.filter(id=request.path.split('/')[-1])[0],
+                                          account=Account.objects.filter(user=request.user)[0]).count()==0:
                 return Response({'status': 'fail',
                                  'message': 'You are not permitted to delete this post!'},
                                 status=status.HTTP_403_FORBIDDEN)
             else:
                 instance = self.get_object()
                 self.perform_destroy(instance)
-                Log.objects.create(account=Account.objects.get(id=serializer.data['author'], method=request.method,
-                                                               action=request.path, time=datetime.now()))
+                Log.objects.create(user=request.user, method=request.method, action=request.path, time=datetime.now())
                 return Response({'status': 'success',
                          'message': 'Deleted successfully!'}, status=status.HTTP_204_NO_CONTENT)
 
-    @api_view(['GET'])
+    @api_view(['POST'])
     def react(request, *args, **kwargs):
-        user = request.user
         post_id = int(request.data['post_id'])
         username = request.data['username']
         reaction = request.data['reaction']
@@ -103,32 +103,30 @@ class PostAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
                              'message': 'Account not found!'}, status=status.HTTP_404_NOT_FOUND)
         acc = Account.objects.filter(username = username)
 
-        if (PostCreator.objects.filter(post = post[0], account = acc[0]).count() > 0):
+        if PostCreator.objects.filter(post = post[0], account = acc[0]).count() > 0:
             return Response({'status': 'fail',
                              'message': 'Creators cannot react on their post!'},
                             status=status.HTTP_403_FORBIDDEN)
         if reaction == 'like':
-            if (PostReaction.objects.filter(post = post[0], account = acc[0], reaction = constants.REACTION_LIKE).count() > 0):
+            if PostReaction.objects.filter(post = post[0], account = acc[0], reaction = constants.REACTION_LIKE).count() > 0:
                 return Response({'status': 'fail',
                                  'message': 'You have liked this post!'},
                                 status = status.HTTP_403_FORBIDDEN)
             else:
                 PostReaction.objects.filter(account = acc[0], post = post[0], reaction = constants.REACTION_DISLIKE).delete()
                 PostReaction.objects.create(account = acc[0], post = post[0], reaction = constants.REACTION_LIKE)
-                Log.objects.create(account=Account.objects.get(id=serializer.data['author'], method=request.method,
-                                                               action=request.path, time=datetime.now()))
+                Log.objects.create(user=request.user, method=request.method, action=request.path, time=datetime.now())
                 return Response({'status': 'success',
                              'message': 'Post liked!'}, status=status.HTTP_200_OK)
         else:
-            if (PostReaction.objects.filter(post = post[0], account = acc[0]).count() > 0):
+            if PostReaction.objects.filter(post = post[0], account = acc[0]).count() > 0:
                 return Response({'status': 'fail',
-                                 'message': 'You have liked this post!'},
+                                 'message': 'You have disliked this post!'},
                                 status = status.HTTP_403_FORBIDDEN)
             else:
                 PostReaction.objects.filter(account = acc[0], post = post[0], reaction = constants.REACTION_LIKE).delete()
                 PostReaction.objects.create(account = acc[0], post = post[0], reaction = constants.REACTION_DISLIKE)
-                Log.objects.create(account=Account.objects.get(id=serializer.data['author'], method=request.method,
-                                                               action=request.path, time=datetime.now()))
+                Log.objects.create(user=request.user, method=request.method, action=request.path, time=datetime.now())
                 return Response({'status': 'success',
                              'message': 'Post liked!'}, status = status.HTTP_200_OK)
 

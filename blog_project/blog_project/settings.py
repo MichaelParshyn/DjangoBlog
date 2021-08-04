@@ -157,6 +157,8 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
+SILENCED_SYSTEM_CHECKS = ["1_8.W001"]
+
 # Internationalization
 # https://docs.djangoproject.com/en/3.2/topics/i18n/
 

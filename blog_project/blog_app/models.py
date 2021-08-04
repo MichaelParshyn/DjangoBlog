@@ -3,7 +3,6 @@ from django.contrib.auth.models import User
 from datetime import datetime
 from blog_app import constants
 
-
 class Account(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     username = models.CharField(max_length=20, unique=True, null=False)
@@ -38,4 +37,3 @@ class Log (models.Model):
     method = models.CharField(max_length=10, blank=False, null=False)
     action = models.CharField(max_length=100, blank=False, null=False)
     time = models.DateTimeField(default=datetime.now())
-
