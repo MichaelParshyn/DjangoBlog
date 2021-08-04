@@ -18,8 +18,8 @@ class PostAdmin(admin.ModelAdmin):
     search_fields = ['title', 'author']
 
 class LogAdmin(admin.ModelAdmin):
-    fields = ['account', 'method', 'action', 'time']
-    search_fields = ['account', 'method']
+    fields = ['user', 'method', 'action', 'time']
+    search_fields = ['user', 'method']
 
 admin.site.register(Account, AccountAdmin)
 admin.site.register(PostCreator, PostCreatorAdmin)

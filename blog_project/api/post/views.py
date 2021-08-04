@@ -26,14 +26,10 @@ class PostAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
         PostCreator.objects.create(post=Post.objects.get(id=serializer.data['id']),
                                    account=Account.objects.get(id=serializer.data['author']),
                                    role=constants.ROLE_OWNER)
-
-        pdb.set_trace()
         Log.objects.create(account=Account.objects.get(id=serializer.data['author'], method=request.method,
                                                        action=request.path, time=datetime.now()))
-
         return Response({'status': 'success',
-                         'message': 'Added successfully!',
-                         'data': serializer.data}, status=status.HTTP_201_CREATED, headers=headers)
+                         'message': 'Added successfully!'}, status=status.HTTP_201_CREATED, headers=headers)
 
     def update(self, request, *args, **kwargs):
         """
@@ -70,13 +66,14 @@ class PostAPI(ListCreateAPIView, RetrieveUpdateDestroyAPIView):
         """
         Deleting post. Can be deleted by owner or admin
         """
-        if (Account.objects.filter(request.user.id==user.id)!=1):
+        if (Account.objects.filter(user=request.user)!=1):
             return Response({'status': 'fail',
                              'message': 'You are triyng to use account which not belongs to you!'},
                             status=status.HTTP_403_FORBIDDEN)
         else:
-            if (PostCreator.objects.filter(post.id == request.data.id, account.id == request.data['account'],
-                                           (role == constants.ROLE_OWNER or constants.ROLE_ADMIN)) != 1):
+            if (PostCreator.objects.filter(post=Post.objects.filter(id=request.path.split('/')[-1]),
+                                           account=request.data['account'],
+                                           role=constants.ROLE_EDITOR) != 1):
                 return Response({'status': 'fail',
                                  'message': 'You are not permitted to delete this post!'},
                                 status=status.HTTP_403_FORBIDDEN)
